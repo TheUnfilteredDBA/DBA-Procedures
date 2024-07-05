@@ -1,0 +1,124 @@
+/**********HOW TO SET UP PEER-TO-PEER REPLICATION FOR NET NEW**********/
+	
+	--STEP 1: CONFIGURE DISTRIBUTION--
+	/*
+		NOTE: In peer-to-peer replication you should sync all of the databases participating in peer-to-peer replication PRIOR to setup.
+		1. Right click on the Replication folder -> Configure Distribution...
+		2. If you want the distributor to be local to the publishing server, click the first radio button.
+			* If you want the distributor to be a remote distributor, click the second radio button. NOTE: If you are using a remote distributor, the server acting as the distributor must already be configured as a distributor.
+		3. Specify the snapshot folder. It is best practice to keep this as the default location.
+		4. Configure the distribution database name (defaulted to "distribution") and the data and log folder location for the distribution database data and log fiels to live. Best practice to keep the distribution database as default.
+		5. Enable the servers you want to be able to use this distributor when they become publishers.
+		6. Hit the "Generate a script file with steps to configure distribution" button. This is your backup of your distribution topology. 
+		7. Hit Finish.
+		NOTE: All nodes participating in peer-to-peer replication must have a distributor configured on their server.
+	*/
+	
+	--STEP 2: CONFIGURE YOUR PUBLICATION--
+	/*
+		1. On the source node, right click on the Local Publications folder -> New Publication...
+		2. Select the database you want to publish.
+		3. Select the type of replication you want to use in your topology. In this case select Peer-to-Peer publication.
+		4. Select the articles you want to replicate in your publication.
+		5. Adjust the article properties if necessary.
+			* If you select the article property option "Delete data. If article has a row filter, delete only the data that matches that filter." then you need to configure the filter SQL Server will use to find the rows to delete on the next page. Otherwise, hit Next.
+		6. In the next page, hit "Security Settings..." for the Log Reader Agent.
+		7. Add the Windows account and password you want to have the Snapshot Agent run as. This account should be used for all replication and should be sysadmin on all replication related servers. This is best practice.
+		8. Leave all other radio buttons as is.
+		9. Hit the second check box "Generate a script file with steps to create the publication." This is your backup of your publication topology.
+		10. Enter the name of your publication.
+		11. Hit Finish.
+		NOTE: If working in SQL Server 2008 or 2005 you have to setup Transactional Replication first and then configure peer-to-peer replication.
+		NOTE: Databases participating MUST be in FULL recovery model.
+	*/
+	
+	--STEP 3: CONFIGURE PEER-TO-PEER TOPOLOGY--
+	/*
+		1. Right click on your publication you just made -> Configure Peer-To-Peer Topology...
+		2. Select the correlating publication you just made.
+		3. Right click in the blank area and hit "Add a New Peer Node".
+		4. Click on the server you're going to add.
+		5. Select the database you want your peer-to-peer publication to connect to.
+		6. Configure the Peer Originator ID.
+		7. Check "Connect to ALL displayed nodes."
+		8. Use the radio buttons to indicate if you want the subscription to be a push or pull subscription.
+		9. Repeat this process for all other participating nodes.
+		10. Add the Windows account and password you want to have the Log Reader Agent Process run as. This account should be used for all replication and should be sysadmin on all replication related servers. This is best practice.
+		11. Keep all other radio buttons as is.
+		12. Add the Windows account and password you want to have the Distribution Agent Process for all participating nodes to run as. This account should be used for all replication and should be sysadmin on all replication related servers. This is best practice.
+		13. Keep all other radio buttons as is.
+		14. In the Ner Peer Initialization page, you need to specify whether or not you manually restored the databases on each node and no changes have been made, or if you have restored the databases and changes have been made and a new backup needs to be taken and provided.
+		15. ALL DATABASES NEED TO BE IN SYNC.
+		NOTE: The Peer Originator ID has to be different for each node.
+	*/
+	
+	/**********WHAT TO DO AFTER**********/
+	/*
+		1. Launch replication monitor and make sure that the snapshot agent has kicked off successfully and has generated an initial snapshot.
+		2. Make sure that subscriptions are successfully getting data distributed to them.
+	*/
+	
+	/**********HOW TO MANUALLY REMOVE REPLICATION FROM A SERVER**********/
+	
+	/*
+		The general process that needs to be followed for a graceful cleanup is:
+			1. Drop all subscriptions that are configured for the replication.
+			2. Drop all publication that are configured for the replication.
+			3. Drop the distributor that is configured for the replication.
+	*/
+	
+	--STEP 1A: DROP A PUSH SUBSCRIPTION FOR A PEER-TO-PEER PUBLICATION--
+	/*
+		Run the following script at the publisher:
+		
+		USE < **Publication database name** >
+		GO
+		EXEC sp_dropmergesubscription @publication = N'<Publication name>', @subscriber = N'<Publisher server name>', @subscriber_db = N'<Subscription database name>', @subscription_type = N'push'
+	*/
+	
+	--STEP 1B: DROP A PULL SUBSCRIPTION FOR A PEER-TO-PEER PUBLICATION--
+	/*
+		Run the following script at the subscriber:
+		
+		USE < **Subscription database name** >
+		GO
+		EXEC sp_dropmergepullsubscription @publication = N'<Publication name>', @publisher = N'<Publisher server name>', @publisher_db = N'<Publisher database name>'
+		
+		Then run the following script at the publisher:
+		
+		USE < **Publication database name** >
+		GO
+		EXEC sp_dropmergesubscription @subscription_type = N'pull', @publication = N'<Publication name>', @subscriber = N'<Subscriber server name>', @subscriber_db = N'<Subscription database name>'
+	*/
+	
+	--STEP 2: DROP A PEER-TO-PEER PUBLICATION--
+	/*
+		Run the following script at the publisher:
+		
+		USE < **Publication database name** >
+		GO
+		EXEC sp_dropmergepublication @publication = N'<Publication name>'
+
+		USE master
+		GO
+		EXEC sp_replicationdboption @dbname = N'<Publication database name>', @value = N'false'
+	*/
+	
+	--STEP 3: DROP THE DISTRIBUTOR--
+	/*
+		1. Right click the Replication folder -> Disable Publishing and Distribution...
+		2. Click the top radio button "Yes, disable publishing on this server..."
+		3. Hit Finish.
+	*/
+	
+	/**********PEER TO PEER REPLICATION DECOMM GOTCHAS**********/
+	/*
+		1. If you are trying to drop a publication from replication and you get something like the following:
+		
+			An exception occurred while executing a Transact-SQL statement or batch. (Microsoft.SqlServer.ConnectionInfo)
+			Cannot execute as the database principal because the principal "dbo" does not exist, this type of principal cannot be impersonated, or you do not have permission.
+		
+		Then you have to set the published database owner to sa. You can accomplish this by running the following in the context of the published database:
+		
+		exec sp_changedbowner @loginame = 'sa'
+	*/
