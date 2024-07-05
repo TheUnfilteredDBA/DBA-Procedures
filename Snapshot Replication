@@ -1,0 +1,123 @@
+/**********HOW TO SET UP SNAPSHOT REPLICATION FOR NET NEW**********/
+	
+	--STEP 1: CONFIGURE DISTRIBUTION--
+	/*
+		1. Right click on the Replication folder -> Configure Distribution...
+		2. If you want the distributor to be local to the publishing server, click the first radio button.
+			* If you want the distributor to be a remote distributor, click the second radio button. NOTE: If you are using a remote distributor, the server acting as the distributor must already be configured as a distributor.
+		3. Specify the snapshot folder. It is best practice to keep this as the default location.
+		4. Configure the distribution database name (defaulted to "distribution") and the data and log folder location for the distribution database data and log fiels to live. Best practice to keep the distribution database as default.
+		5. Enable the servers you want to be able to use this distributor when they become publishers.
+		6. Hit the "Generate a script file with steps to configure distribution" button. This is your backup of your distribution topology. 
+		7. Hit Finish.
+	*/
+	
+	--STEP 2: CONFIGURE YOUR PUBLICATION--
+	/*
+		1. Right click on the Local Publications folder -> New Publication...
+		2. Select the database you want to publish.
+		3. Select the type of replication you want to use in your topology. In this case select Snapshot publication.
+		4. Select the articles you want to replicate in your publication.
+		5. Adjust the article properties if necessary.
+			* If you select the article property option "Delete data. If article has a row filter, delete only the data that matches that filter." then you need to configure the filter SQL Server will use to find the rows to delete on the next page. Otherwise, hit Next.
+		6. If you want an immediate snapshot to take place after the publication is created, click the first check box "Create snapshot immediately..."
+		7. If you want to set a schedule for the snapshot agent to run to update the subscribers based on a time interval, hit the second check box "Schedule the Snapshot Agent..."
+		8. In the next page, hit "Security Settings..."
+		9. Add the Windows account and password you want to have the Snapshot Agent run as. This account should be used for all replication and should be sysadmin on all replication related servers. This is best practice.
+		10. Leave all other radio buttons as is.
+		11. Hit the second check box "Generate a script file with steps to create the publication." This is your backup of your publication topology.
+		12. Enter the name of your publication.
+		13. Hit Finish.
+	*/
+	
+	--STEP 3: CONFIGURE YOUR SUBSCRIBER--
+	/*
+		1. Right click on the publication you want to add a subscriber to in the "Local Publications" folder -> New Subscriptions...
+		2. Select the publication you want to add a subscriber to.
+		3. If you want to configure a push subscription (this means that data will be pushed out to the subscribers) hit the first radio button.
+			* If you want to configure a pull subscription (this means that the subscriber will reach out to the publisher to grab data changes) hit the second radio button.
+		4. Hit the Add Subscriber drop down list and select the server you want to act as your subscriber.
+		5. In the Subscription Database section, you can either select the database on the subscriber side if it already exists, or have SQL Server create a database on the subscriber side if it doesn't exist yet.
+		6. Add the Windows account and password you want to have the Distribution Agent Process run as. This account should be used for all replication and should be sysadmin on all replication related servers. This is best practice.
+		7. Keep all other radio buttons as is.
+		8. Set the Agent Schedule to either run continuously (this will have data flow through automatically) or on demand (you have to manually kick off the snapshot agent).
+		9. Set whether ot initialize each subscription with a snapshot of the publication data and schema immediately or at first synchronization.
+		10. Hit the second check box "Generate a script file with steps to create the subscription(s)." This is your backup of your subscription topology.
+		11. Hit Finish.
+	*/
+	
+	/**********WHAT TO DO AFTER**********/
+	/*
+		1. Launch replication monitor and make sure that the snapshot agent has kicked off successfully and has generated an initial snapshot.
+		2. Make sure that subscriptions are successfully getting data distributed to them.
+	*/
+	
+	/**********SNAPSHOT REPLICATION SETUP GOTCHAS**********/
+	/*
+		1. If you see that there are errors relating to an object on the subscriber side not being able to be dropped or truncated due to a dependency, you will have to add that dependency to the list of checked articles published for replication.
+	*/
+	
+	/**********HOW TO MANUALLY REMOVE REPLICATION FROM A SERVER**********/
+	
+	/*
+		The general process that needs to be followed for a graceful cleanup is:
+			1. Drop all subscriptions that are configured for the replication.
+			2. Drop all publication that are configured for the replication.
+			3. Drop the distributor that is configured for the replication.
+	*/
+	
+	--STEP 1A: DROP A PUSH SUBSCRIPTION FOR A SNAPSHOT PUBLICATION--
+	/*
+		Run the following script at the publisher:
+		
+		USE < **Publication database name** >
+		GO
+		EXEC sp_dropsubscription @publication = N'<Publication name>', @article = N'all', @subscriber = N'all', @destination_db = N'all'
+	*/
+	
+	--STEP 1B: DROP A PULL SUBSCRIPTION FOR A SNAPSHOT PUBLICATION--
+	/*
+		Run the following script at the subscriber:
+		
+		USE < **Subscription database name** >
+		GO
+		EXEC sp_droppullsubscription @publisher = N'<Publisher server name>', @publisher_db = N'<Publication database name>', @publication = N'<Publication name>'
+		
+		Then run the following script at the publisher:
+		
+		USE < **Publication database name** >
+		GO
+		EXEC sp_dropsubscription @publication=N'<Publication name>', @subscriber = N'<Subscriber server name>', @article = N'all', @destination_db = N'all'
+	*/
+	
+	--STEP 2: DROP A SNAPSHOT PUBLICATION--
+	/*
+		Run the following script at the publisher:
+		
+		USE < **Publication database name** >
+		GO
+		EXEC sp_droppublication @publication = N'<Publication name>'
+		
+		USE master
+		GO
+		exec sp_replicationdboption @dbname = N'<Publication database name>', @optname = N'publish', @value = N'false'
+	*/
+	
+	--STEP 3: DROP THE DISTRIBUTOR--
+	/*
+		1. Right click the Replication folder -> Disable Publishing and Distribution...
+		2. Click the top radio button "Yes, disable publishing on this server..."
+		3. Hit Finish.
+	*/
+	
+	/**********SNAPSHOT REPLICATION DECOMM GOTCHAS**********/
+	/*
+		1. If you are trying to drop a publication from replication and you get something like the following:
+		
+			An exception occurred while executing a Transact-SQL statement or batch. (Microsoft.SqlServer.ConnectionInfo)
+			Cannot execute as the database principal because the principal "dbo" does not exist, this type of principal cannot be impersonated, or you do not have permission.
+		
+		Then you have to set the published database owner to sa. You can accomplish this by running the following in the context of the published database:
+		
+		exec sp_changedbowner @loginame = 'sa'
+	*/
