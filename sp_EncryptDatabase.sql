@@ -9,7 +9,9 @@ SET QUOTED_IDENTIFIER ON
 GO
 
 
-CREATE OR ALTER  PROCEDURE [dbo].[sp_EncryptDatabase] @DatabaseName SYSNAME = NULL, @ServerCert NVARCHAR(100) = NULL, @MasterKeyPassword NVARCHAR(60) = NULL, @SetupOnly INT = 0, @Progress NVARCHAR(50) = NULL, @Report INT = 0, @Help INT = 0
+
+
+CREATE  or alter  PROCEDURE [dbo].[sp_EncryptDatabase] @DatabaseName SYSNAME = NULL, @ServerCert NVARCHAR(100) = NULL, @MasterKeyPassword NVARCHAR(60) = NULL, @SetupOnly INT = 0, @Progress NVARCHAR(50) = NULL, @Report INT = 0, @Help INT = 0
 AS
 
 BEGIN
@@ -39,6 +41,10 @@ BEGIN
 		PRINT 'Creating server certificate...'
 		DECLARE @ServerNameSetupOnly sysname
 		SET @ServerNameSetupOnly = @@SERVERNAME 
+		IF @ServerNameSetupOnly like '%\%'
+		BEGIN
+			SET @ServerNameSetupOnly = REPLACE(@@SERVERNAME,'\','_')
+		END
 		SET @ServerCert = '[' + @ServerNameSetupOnly + '_TDE_CERT]'
 		DECLARE @sqlSetupOnly NVARCHAR(200) = N'USE [master] CREATE CERTIFICATE ' + @ServerCert + ' WITH SUBJECT = ''Database_Encryption'''
 
@@ -61,6 +67,13 @@ BEGIN
 
 		PRINT 'Creating server certificate...'
 		
+		
+		IF @ServerCert like '%\%'
+		BEGIN
+			SET @ServerCert = REPLACE(@ServerCert,'\','_')
+			PRINT 'Changed the supplied ''\'' to ''_'' to prevent issues backing up the cert to a file path...'
+		END
+		
 		DECLARE @sqlSetupOnly2 NVARCHAR(200) = N'USE [master] CREATE CERTIFICATE ' + @ServerCert + ' WITH SUBJECT = ''Database_Encryption'''
 
 		EXEC sp_executesql @sqlSetupOnly2
@@ -74,6 +87,12 @@ BEGIN
 	BEGIN
 		
 		PRINT 'Creating server certificate...'
+
+		IF @ServerCert like '%\%'
+		BEGIN
+			SET @ServerCert = REPLACE(@ServerCert,'\','_')
+			PRINT 'Changed the supplied ''\'' to ''_'' to prevent issues backing up the cert to a file path...'
+		END
 		
 		DECLARE @sqlSetupOnly3 NVARCHAR(200) = N'USE [master] CREATE CERTIFICATE ' + @ServerCert + ' WITH SUBJECT = ''Database_Encryption'''
 
@@ -81,6 +100,37 @@ BEGIN
 
 		PRINT 'Server certificate created...'
 		
+	END
+
+	ELSE IF(@SetupOnly = 1 AND @MasterKeyPassword IS NULL AND @ServerCert IS NULL AND EXISTS (SELECT TOP 1 * FROM sys.symmetric_keys WHERE name = '##MS_DatabaseMasterKey##'))
+	 
+	BEGIN
+		PRINT 'Master key already exists...'
+		PRINT 'Creating server certificate...'
+		DECLARE @ServerNameSetupOnly4 sysname
+		
+		SET @ServerNameSetupOnly4 = @@SERVERNAME 
+		IF @ServerNameSetupOnly4 like '%\%'
+		BEGIN
+			SET @ServerNameSetupOnly4 = REPLACE(@@SERVERNAME,'\','_')
+		END
+		SET @ServerCert = @ServerNameSetupOnly4 + '_TDE_CERT'
+		
+		
+		IF EXISTS(SELECT name from sys.certificates WHERE name = @ServerCert)
+		BEGIN	
+		SET @ServerCert = '['+@ServerCert + '_' + REPLACE(REPLACE(CAST(GETDATE() as nvarchar),' ','_'),':','')+']'
+		END	
+	
+		IF (LEFT(@ServerCert, 1) <> '[' and RIGHT (@ServerCert, 1) <> ']')
+		BEGIN
+		SET @ServerCert = '['+@ServerCert+']'
+		END
+		DECLARE @sqlSetupOnly4 NVARCHAR(200) = N'USE [master] CREATE CERTIFICATE ' + @ServerCert + ' WITH SUBJECT = ''Database_Encryption'''
+
+		EXEC sp_executesql @sqlSetupOnly4
+
+		PRINT 'Server certificate created...'
 	END
 
 	IF OBJECT_ID('tempdb..#tblTempCertCheck') IS NOT NULL DROP TABLE #tblTempCertCheck
@@ -114,6 +164,11 @@ BEGIN
 		PRINT 'Creating server certificate...'
 		DECLARE @ServerName sysname
 		SET @ServerName = @@SERVERNAME 
+		IF @ServerName LIKE '%\%'
+		BEGIN
+			SET @ServerName = REPLACE(@ServerName, '\', '_')
+			PRINT 'Changed the supplied ''\'' to ''_'' to prevent issues backing up the cert to a file path...'
+		END
 		SET @ServerCert = '[' + @ServerName + '_TDE_CERT]'
 		DECLARE @sql NVARCHAR(200) = N'USE [master] CREATE CERTIFICATE ' + @ServerCert + ' WITH SUBJECT = ''Database_Encryption'''
 
@@ -241,3 +296,5 @@ BEGIN
 	END
 END
 GO
+
+
