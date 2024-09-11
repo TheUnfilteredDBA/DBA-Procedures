@@ -11,7 +11,7 @@ GO
 
 
 
-CREATE  or alter  PROCEDURE [dbo].[sp_EncryptDatabase] @DatabaseName SYSNAME = NULL, @ServerCert NVARCHAR(100) = NULL, @MasterKeyPassword NVARCHAR(60) = NULL, @SetupOnly INT = 0, @Progress NVARCHAR(50) = NULL, @Report INT = 0, @Help INT = 0
+CREATE  or alter  PROCEDURE [dbo].[sp_EncryptDatabase] @DatabaseName SYSNAME = NULL, @ServerCert NVARCHAR(100) = NULL, @MasterKeyPassword NVARCHAR(60) = NULL, @ExpiryDate NVARCHAR(50) = NULL, @SetupOnly INT = 0, @Progress NVARCHAR(50) = NULL, @Report INT = 0, @Help INT = 0
 AS
 
 BEGIN
@@ -28,7 +28,7 @@ BEGIN
 		SET @ServerCert = '[' + @ServerCert + ']'
 	END
 
-	IF(@SetupOnly = 1 AND @MasterKeyPassword IS NOT NULL AND @ServerCert IS NULL)
+	IF(@SetupOnly = 1 AND @MasterKeyPassword IS NOT NULL AND @ServerCert IS NULL AND @ExpiryDate IS NULL)
 	BEGIN
 		PRINT 'Creating the master key...'
 		
@@ -54,8 +54,34 @@ BEGIN
 		
 	END
 
+	ELSE IF(@SetupOnly = 1 AND @MasterKeyPassword IS NOT NULL AND @ServerCert IS NULL AND @ExpiryDate IS NOT NULL) --Not Null Expiry Date
+	BEGIN
+		PRINT 'Creating the master key...'
+		
 
-	ELSE IF(@SetupOnly = 1 AND @MasterKeyPassword IS NOT NULL AND @ServerCert IS NOT NULL)
+		DECLARE @cmdSetupOnly_e1 NVARCHAR(100) = N'USE [master] CREATE MASTER KEY ENCRYPTION BY PASSWORD = ''' + @MasterKeyPassword + ''''
+		EXEC sp_executesql @cmdSetupOnly_e1
+
+		PRINT 'Master key created...'
+
+		PRINT 'Creating server certificate...'
+		DECLARE @ServerNameSetupOnly_e1 sysname
+		SET @ServerNameSetupOnly_e1 = @@SERVERNAME 
+		IF @ServerNameSetupOnly_e1 like '%\%'
+		BEGIN
+			SET @ServerNameSetupOnly_e1 = REPLACE(@@SERVERNAME,'\','_')
+		END
+		SET @ServerCert = '[' + @ServerNameSetupOnly_e1 + '_TDE_CERT]'
+		DECLARE @sqlSetupOnly_e1 NVARCHAR(200) = N'USE [master] CREATE CERTIFICATE ' + @ServerCert + ' WITH SUBJECT = ''Database_Encryption'', EXPIRY_DATE = ''' + @ExpiryDate + ''''
+
+		EXEC sp_executesql @sqlSetupOnly_e1
+
+		PRINT 'Server certificate created...'
+		
+	END
+
+
+	ELSE IF(@SetupOnly = 1 AND @MasterKeyPassword IS NOT NULL AND @ServerCert IS NOT NULL AND @ExpiryDate IS NULL)
 	BEGIN
 		PRINT 'Creating the master key...'
 		
@@ -82,8 +108,35 @@ BEGIN
 		
 	END
 
+	ELSE IF(@SetupOnly = 1 AND @MasterKeyPassword IS NOT NULL AND @ServerCert IS NOT NULL AND @ExpiryDate IS NOT NULL) --Not null Expiry Date
+	BEGIN
+		PRINT 'Creating the master key...'
+		
 
-	ELSE IF(@SetupOnly = 1 AND @MasterKeyPassword IS NULL AND @ServerCert IS NOT NULL)
+		DECLARE @cmdSetupOnly2_e2 NVARCHAR(100) = N'USE [master] CREATE MASTER KEY ENCRYPTION BY PASSWORD = ''' + @MasterKeyPassword + ''''
+		EXEC sp_executesql @cmdSetupOnly2_e2
+
+		PRINT 'Master key created...'
+
+		PRINT 'Creating server certificate...'
+		
+		
+		IF @ServerCert like '%\%'
+		BEGIN
+			SET @ServerCert = REPLACE(@ServerCert,'\','_')
+			PRINT 'Changed the supplied ''\'' to ''_'' to prevent issues backing up the cert to a file path...'
+		END
+		
+		DECLARE @sqlSetupOnly2_e2 NVARCHAR(200) = N'USE [master] CREATE CERTIFICATE ' + @ServerCert + ' WITH SUBJECT = ''Database_Encryption'', EXPIRY_DATE = ''' + @ExpiryDate + ''''
+
+		EXEC sp_executesql @sqlSetupOnly2_e2
+
+		PRINT 'Server certificate created...'
+		
+	END
+
+
+	ELSE IF(@SetupOnly = 1 AND @MasterKeyPassword IS NULL AND @ServerCert IS NOT NULL AND @ExpiryDate IS NULL)
 	BEGIN
 		
 		PRINT 'Creating server certificate...'
@@ -102,7 +155,26 @@ BEGIN
 		
 	END
 
-	ELSE IF(@SetupOnly = 1 AND @MasterKeyPassword IS NULL AND @ServerCert IS NULL AND EXISTS (SELECT TOP 1 * FROM sys.symmetric_keys WHERE name = '##MS_DatabaseMasterKey##'))
+	ELSE IF(@SetupOnly = 1 AND @MasterKeyPassword IS NULL AND @ServerCert IS NOT NULL AND @ExpiryDate IS NOT NULL) --Expiry date is Not Null
+	BEGIN
+		
+		PRINT 'Creating server certificate...'
+
+		IF @ServerCert like '%\%'
+		BEGIN
+			SET @ServerCert = REPLACE(@ServerCert,'\','_')
+			PRINT 'Changed the supplied ''\'' to ''_'' to prevent issues backing up the cert to a file path...'
+		END
+		
+		DECLARE @sqlSetupOnly3_e3 NVARCHAR(200) = N'USE [master] CREATE CERTIFICATE ' + @ServerCert + ' WITH SUBJECT = ''Database_Encryption'', EXPIRY_DATE = ''' + @ExpiryDate + ''''
+
+		EXEC sp_executesql @sqlSetupOnly3_e3
+
+		PRINT 'Server certificate created...'
+		
+	END
+
+	ELSE IF(@SetupOnly = 1 AND @MasterKeyPassword IS NULL AND @ServerCert IS NULL AND EXISTS (SELECT TOP 1 * FROM sys.symmetric_keys WHERE name = '##MS_DatabaseMasterKey##') AND @ExpiryDate IS NULL)
 	 
 	BEGIN
 		PRINT 'Master key already exists...'
@@ -133,6 +205,37 @@ BEGIN
 		PRINT 'Server certificate created...'
 	END
 
+	ELSE IF(@SetupOnly = 1 AND @MasterKeyPassword IS NULL AND @ServerCert IS NULL AND EXISTS (SELECT TOP 1 * FROM sys.symmetric_keys WHERE name = '##MS_DatabaseMasterKey##') AND @ExpiryDate IS NOT NULL) --Not null expiry Date
+	 
+	BEGIN
+		PRINT 'Master key already exists...'
+		PRINT 'Creating server certificate...'
+		DECLARE @ServerNameSetupOnly4_e4 sysname
+		
+		SET @ServerNameSetupOnly4_e4 = @@SERVERNAME 
+		IF @ServerNameSetupOnly4_e4 like '%\%'
+		BEGIN
+			SET @ServerNameSetupOnly4_e4 = REPLACE(@@SERVERNAME,'\','_')
+		END
+		SET @ServerCert = @ServerNameSetupOnly4_e4 + '_TDE_CERT'
+		
+		
+		IF EXISTS(SELECT name from sys.certificates WHERE name = @ServerCert)
+		BEGIN	
+		SET @ServerCert = '['+@ServerCert + '_' + REPLACE(REPLACE(CAST(GETDATE() as nvarchar),' ','_'),':','')+']'
+		END	
+	
+		IF (LEFT(@ServerCert, 1) <> '[' and RIGHT (@ServerCert, 1) <> ']')
+		BEGIN
+		SET @ServerCert = '['+@ServerCert+']'
+		END
+		DECLARE @sqlSetupOnly4_e4 NVARCHAR(200) = N'USE [master] CREATE CERTIFICATE ' + @ServerCert + ' WITH SUBJECT = ''Database_Encryption'', EXPIRY_DATE = ''' + @ExpiryDate + ''''
+
+		EXEC sp_executesql @sqlSetupOnly4_e4
+
+		PRINT 'Server certificate created...'
+	END
+
 	IF OBJECT_ID('tempdb..#tblTempCertCheck') IS NOT NULL DROP TABLE #tblTempCertCheck
 
 	SELECT * INTO #tblTempCertCheck
@@ -149,7 +252,7 @@ BEGIN
 		PRINT 'Pass in the @ServerCert parameter if you would like to specify a server cert name or leave it blank to have one generated for you.'
 	END
 
-	ELSE IF (NOT EXISTS(SELECT TOP 1 * FROM #tblTempCertCheck) AND @DatabaseName IS NOT NULL AND @MasterKeyPassword IS NOT NULL)
+	ELSE IF (NOT EXISTS(SELECT TOP 1 * FROM #tblTempCertCheck) AND @DatabaseName IS NOT NULL AND @MasterKeyPassword IS NOT NULL AND @ExpiryDate IS NULL)
 		BEGIN
 		PRINT 'The table is empty, running certificate creation process...'
 		
@@ -173,6 +276,34 @@ BEGIN
 		DECLARE @sql NVARCHAR(200) = N'USE [master] CREATE CERTIFICATE ' + @ServerCert + ' WITH SUBJECT = ''Database_Encryption'''
 
 		EXEC sp_executesql @sql
+
+		PRINT 'Server certificate created...'
+		END
+
+	ELSE IF (NOT EXISTS(SELECT TOP 1 * FROM #tblTempCertCheck) AND @DatabaseName IS NOT NULL AND @MasterKeyPassword IS NOT NULL AND @ExpiryDate IS NOT NULL) --NOT NULL EXPIRY DATE
+		BEGIN
+		PRINT 'The table is empty, running certificate creation process...'
+		
+		PRINT 'Creating the master key...'
+		
+
+		DECLARE @cmd_e5 NVARCHAR(100) = N'USE [master] CREATE MASTER KEY ENCRYPTION BY PASSWORD = ''' + @MasterKeyPassword + ''''
+		EXEC sp_executesql @cmd_e5
+
+		PRINT 'Master key created...'
+
+		PRINT 'Creating server certificate...'
+		DECLARE @ServerName_e5 sysname
+		SET @ServerName_e5 = @@SERVERNAME 
+		IF @ServerName_e5 LIKE '%\%'
+		BEGIN
+			SET @ServerName_e5 = REPLACE(@ServerName_e5, '\', '_')
+			PRINT 'Changed the supplied ''\'' to ''_'' to prevent issues backing up the cert to a file path...'
+		END
+		SET @ServerCert = '[' + @ServerName_e5 + '_TDE_CERT]'
+		DECLARE @sql_e5 NVARCHAR(200) = N'USE [master] CREATE CERTIFICATE ' + @ServerCert + ' WITH SUBJECT = ''Database_Encryption'', EXPIRY_DATE = ''' + @ExpiryDate + ''''
+
+		EXEC sp_executesql @sql_e5
 
 		PRINT 'Server certificate created...'
 		END
