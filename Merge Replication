@@ -130,4 +130,5 @@
 		Then you have to set the published database owner to sa. You can accomplish this by running the following in the context of the published database:
 		
 		exec sp_changedbowner @loginame = 'sa'
+		Then you're done.
 	*/
